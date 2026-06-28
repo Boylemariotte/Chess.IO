@@ -1,0 +1,13 @@
+# Motor de escritorio (binario de Windows, 100+ MB). La web NO lo usa:
+# usa su propio Stockfish WASM en web/js/engine/.
+engine/
+
+# Datos locales del modo de juego de escritorio.
+profile.json
+
+# Artefactos y temporales.
+ajedrez-web.zip
+__pycache__/
+*.pyc
+.vercel/
+node_modules/

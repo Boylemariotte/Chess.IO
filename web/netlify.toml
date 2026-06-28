@@ -1,0 +1,16 @@
+# Configuración para Netlify (opcional, solo se usa si conectas un repositorio).
+# El sitio es estático: no hay build, se publica la carpeta tal cual.
+[build]
+  publish = "."
+  command = ""
+
+# Cachear durante mucho tiempo los archivos pesados del motor (no cambian).
+[[headers]]
+  for = "/js/engine/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/data/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"

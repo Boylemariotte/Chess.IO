@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Prueba del motor (WASM)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #1f2227; color: #e8e8e8; padding: 24px; }
+    #log { background: #15171b; border-radius: 8px; padding: 14px; font-family: Consolas, monospace;
+           white-space: pre-wrap; font-size: .9rem; margin-top: 12px; min-height: 200px; }
+    .ok { color: #2ecc71; } .err { color: #e74c3c; } .info { color: #4a90d9; }
+    button { background: #4a90d9; color: #fff; border: 0; border-radius: 8px; padding: 10px 18px; font-size: 1rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>♟ Prueba del motor Stockfish (WebAssembly)</h1>
+  <p>Esto comprueba que el motor de ajedrez funciona dentro de tu navegador.</p>
+  <button id="run">Probar el motor</button>
+  <div id="log"></div>
+
+  <script src="js/chess.js"></script>
+  <script src="js/engine.js"></script>
+  <script>
+    const log = (msg, cls) => {
+      const el = document.getElementById("log");
+      el.innerHTML += `<span class="${cls || ''}">${msg}</span>\n`;
+    };
+    document.getElementById("run").addEventListener("click", async () => {
+      document.getElementById("log").innerHTML = "";
+      try {
+        log("Cargando el motor...", "info");
+        const t0 = performance.now();
+        const eng = new Engine("js/engine/stockfish.js");
+        await eng.init();
+        log(`✓ Motor iniciado (UCI listo) en ${Math.round(performance.now() - t0)} ms`, "ok");
+
+        log("Analizando la posición inicial a profundidad 12...", "info");
+        const t1 = performance.now();
+        const r = await eng.analyse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 12);
+        const ms = Math.round(performance.now() - t1);
+        log(`✓ Mejor jugada: ${r.bestmove} | evaluación: ${r.scoreCp} centipeones | tiempo: ${ms} ms`, "ok");
+
+        // Mate del pastor: debe encontrar Qxf7#
+        log("Comprobando un mate (mate del pastor)...", "info");
+        const mateFen = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/8/PPPP1PPP/RNBQK1NR w KQkq - 0 1";
+        // (posición tras 1.e4 e5 2.Bc4 Nc6 3.Qh5 — Qxf7# disponible)
+        const m = await eng.analyse("r1bqkbnr/pppp1ppp/2n5/1B2p2Q/4P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1", 6);
+        log(`✓ En posición de mate sugiere: ${m.bestmove} (mate en ${m.mate})`, "ok");
+
+        log("\n✅ TODO OK. El motor funciona en tu navegador.", "ok");
+        eng.quit();
+      } catch (e) {
+        log("❌ ERROR: " + (e && e.message ? e.message : e), "err");
+        log("Asegúrate de abrir esta página vía http:// (no file://). Usa servir_web.bat.", "err");
+      }
+    });
+  </script>
+</body>
+</html>

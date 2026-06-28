@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Analizador de Ajedrez</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>♟ Ajedrez · Analiza y Juega</h1>
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="analyze">📊 Analizar partida</button>
+      <button class="tab-btn" data-tab="play">🎮 Jugar contra la IA</button>
+    </nav>
+  </header>
+
+  <main>
+   <div id="tab-analyze" class="tab-content">
+    <!-- Panel de entrada -->
+    <section id="input-panel" class="card">
+      <label for="pgn">Pega aquí tu partida (PGN):</label>
+      <textarea id="pgn" rows="8" placeholder="1. e4 d5 2. exd5 ..."></textarea>
+      <div class="controls">
+        <label>Profundidad del análisis:
+          <select id="depth">
+            <option value="10">Rápida (10)</option>
+            <option value="15" selected>Normal (15)</option>
+            <option value="18">Profunda (18)</option>
+            <option value="22">Muy profunda (22)</option>
+          </select>
+        </label>
+        <input type="file" id="file-input" accept=".pgn,.txt" class="hidden" />
+        <button id="load-file" class="ghost">Cargar archivo (.pgn)</button>
+        <button id="load-example" class="ghost">Cargar ejemplo</button>
+        <button id="analyze">Analizar partida(s)</button>
+      </div>
+      <p class="hint">Puedes pegar varias partidas seguidas o cargar un archivo .pgn con muchas.</p>
+      <div id="progress-wrap" class="hidden">
+        <div id="progress-bar"><div id="progress-fill"></div></div>
+        <span id="progress-text"></span>
+      </div>
+      <div id="error-box" class="hidden"></div>
+    </section>
+
+    <!-- Panel de resultados -->
+    <section id="results" class="hidden">
+      <!-- Estadísticas globales (varias partidas) -->
+      <div class="card hidden" id="global-card">
+        <h2>Estadísticas globales</h2>
+        <div id="global-stats"></div>
+      </div>
+
+      <!-- Selector de partidas (varias partidas) -->
+      <div class="card hidden" id="games-card">
+        <h2>Partidas analizadas</h2>
+        <div id="games-list"></div>
+      </div>
+
+      <div class="layout">
+        <!-- Tablero + navegación -->
+        <div class="board-col card">
+          <div class="player-tag" id="tag-top"></div>
+          <div id="board-wrap">
+            <div id="board"></div>
+            <svg id="arrows" viewBox="0 0 8 8" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="player-tag bottom" id="tag-bottom"></div>
+
+          <div id="move-info"></div>
+
+          <!-- Gráfico de evaluación -->
+          <div id="eval-graph-wrap">
+            <svg id="eval-graph" viewBox="0 0 400 120" preserveAspectRatio="none"></svg>
+            <div class="graph-legend"><span>Ventaja blancas ▲</span><span>▼ Ventaja negras</span></div>
+          </div>
+
+          <div class="nav">
+            <button id="nav-first" title="Inicio">⏮</button>
+            <button id="nav-prev" title="Anterior">◀</button>
+            <button id="nav-next" title="Siguiente">▶</button>
+            <button id="nav-last" title="Final">⏭</button>
+            <button id="flip" title="Girar tablero">⟲ Girar</button>
+          </div>
+          <p class="hint">Usa ← → para navegar · tecla F para girar</p>
+        </div>
+
+        <!-- Reporte -->
+        <div class="report-col">
+          <div class="card summary-card">
+            <h2>Resumen</h2>
+            <div id="opening-info"></div>
+            <div id="summary"></div>
+          </div>
+          <div class="card moves-card">
+            <h2>Jugadas</h2>
+            <div id="movelist"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reporte para aprender -->
+      <div class="card" id="report-card">
+        <h2>📝 Aprende de tus errores</h2>
+        <p class="hint">Genera un resumen de tus errores principales y consejos para mejorar. Elige tu color:</p>
+        <div class="report-buttons" id="report-buttons"></div>
+        <pre id="report-output" class="hidden"></pre>
+        <div id="report-actions" class="hidden">
+          <button id="copy-report" class="ghost">📋 Copiar</button>
+          <button id="download-report" class="ghost">💾 Descargar .txt</button>
+          <span id="copy-msg"></span>
+        </div>
+      </div>
+
+      <!-- Entrenador de errores -->
+      <div class="card hidden" id="trainer-card">
+        <h2>🧩 Entrena tus errores</h2>
+        <div id="trainer-intro"></div>
+        <div id="trainer-area" class="hidden">
+          <div class="trainer-layout">
+            <div class="board-col">
+              <div id="puzzle-prompt"></div>
+              <div id="puzzle-board-wrap"><div id="puzzle-board"></div></div>
+            </div>
+            <div class="trainer-side">
+              <div id="puzzle-progress"></div>
+              <div id="puzzle-status"><em>Encuentra la mejor jugada y muévela en el tablero.</em></div>
+              <div class="puzzle-buttons">
+                <button id="pz-hint" class="ghost">💡 Pista</button>
+                <button id="pz-solution" class="ghost">Ver solución</button>
+                <button id="pz-next">Siguiente ▶</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+   </div><!-- /tab-analyze -->
+
+   <!-- ================= PESTAÑA: JUGAR ================= -->
+   <div id="tab-play" class="tab-content hidden">
+    <div class="card" id="play-setup">
+      <h2>Nueva partida contra la IA</h2>
+      <div class="controls">
+        <label>Juego con:
+          <select id="play-color">
+            <option value="white">Blancas</option>
+            <option value="black">Negras</option>
+            <option value="random">Al azar</option>
+          </select>
+        </label>
+        <label>Dificultad:
+          <select id="play-mode">
+            <option value="adaptive" selected>Adaptativa (a tu nivel)</option>
+            <option value="fixed">Fija</option>
+          </select>
+        </label>
+        <label id="elo-fixed-wrap" class="hidden">Elo del rival:
+          <input type="number" id="play-elo" value="1000" min="500" max="2800" step="50" style="width:90px" />
+        </label>
+        <button id="play-start">Empezar partida</button>
+      </div>
+    </div>
+
+    <div class="card hidden" id="elo-card">
+      <div id="elo-panel"></div>
+      <svg id="elo-graph" viewBox="0 0 400 110" preserveAspectRatio="none" class="hidden"></svg>
+    </div>
+
+    <div class="play-layout hidden" id="play-area">
+      <div class="board-col card">
+        <div class="player-tag" id="ptag-top"></div>
+        <div id="play-board-wrap">
+          <div id="play-board"></div>
+          <svg id="play-arrows" viewBox="0 0 8 8" preserveAspectRatio="none"></svg>
+          <div id="promo-overlay" class="hidden"></div>
+        </div>
+        <div class="player-tag bottom" id="ptag-bottom"></div>
+        <div id="play-status"></div>
+        <div class="nav">
+          <button id="play-hint" class="ghost">💡 Pista</button>
+          <button id="play-takeback" class="ghost">↩ Deshacer</button>
+          <button id="play-resign" class="ghost">🏳 Rendirse</button>
+          <button id="play-flip" class="ghost">⟲ Girar</button>
+          <button id="play-sound" class="ghost" title="Activar/desactivar sonido">🔊</button>
+        </div>
+        <button id="play-analyze" class="ghost hidden">📊 Analizar esta partida</button>
+      </div>
+
+      <div class="report-col">
+        <div class="card">
+          <h2>Tu última jugada</h2>
+          <div id="play-feedback"><em>Haz tu primera jugada para ver la evaluación.</em></div>
+        </div>
+        <div class="card moves-card">
+          <h2>Historial</h2>
+          <div id="play-history"></div>
+        </div>
+      </div>
+    </div>
+   </div><!-- /tab-play -->
+  </main>
+
+  <script src="/static/app.js"></script>
+  <script src="/static/play.js"></script>
+</body>
+</html>

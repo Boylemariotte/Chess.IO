@@ -1,0 +1,13 @@
+# Blueprint de Render para publicar la versión web como sitio estático.
+# (Opcional: también puedes configurarlo a mano en el panel de Render.)
+services:
+  - type: web
+    name: ajedrez-web
+    runtime: static
+    buildCommand: ""
+    staticPublishPath: ./web
+    pullRequestPreviewsEnabled: false
+    headers:
+      - path: /js/engine/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
