@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ajedrez · Entrar</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding-bottom: 0; }
+    .login-wrap { width: 100%; max-width: 400px; }
+    .login-wrap h1 { text-align: center; font-size: 2rem; margin-bottom: 6px; }
+    .login-wrap .subtitle { text-align: center; color: var(--muted); margin-bottom: 24px; }
+    .mode-toggle { display: flex; gap: 0; margin-bottom: 20px; border-radius: 10px; overflow: hidden; border: 1px solid #3a3f47; }
+    .mode-btn { flex: 1; padding: 10px; background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 0.95rem; transition: background .15s; }
+    .mode-btn.active { background: var(--accent); color: #fff; font-weight: 600; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.9rem; }
+    .field input { width: 100%; background: #1a1c21; color: var(--text); border: 1px solid #3a3f47; border-radius: 8px; padding: 10px 12px; font-size: 1rem; }
+    .field input:focus { outline: none; border-color: var(--accent); }
+    .submit-btn { width: 100%; padding: 12px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 4px; }
+    .submit-btn:hover { filter: brightness(1.1); }
+    .err { color: #e74c3c; font-size: 0.9rem; margin-top: 10px; min-height: 20px; text-align: center; }
+    .chess-icon { text-align: center; font-size: 3rem; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <div class="login-wrap card">
+    <div class="chess-icon">♟</div>
+    <h1>Ajedrez</h1>
+    <p class="subtitle">Analiza · Juega · Aprende</p>
+
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="btn-login">Entrar</button>
+      <button class="mode-btn" id="btn-register">Registrarse</button>
+    </div>
+
+    <div class="field">
+      <label for="username">Usuario</label>
+      <input type="text" id="username" placeholder="tu_usuario" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label for="password">Contraseña</label>
+      <input type="password" id="password" placeholder="••••••" autocomplete="current-password" />
+    </div>
+
+    <button class="submit-btn" id="submit-btn">Entrar</button>
+    <div class="err" id="err-msg"></div>
+  </div>
+
+  <script>
+    let mode = "login"; // "login" | "register"
+
+    document.getElementById("btn-login").addEventListener("click", () => setMode("login"));
+    document.getElementById("btn-register").addEventListener("click", () => setMode("register"));
+
+    function setMode(m) {
+      mode = m;
+      document.getElementById("btn-login").classList.toggle("active", m === "login");
+      document.getElementById("btn-register").classList.toggle("active", m === "register");
+      document.getElementById("submit-btn").textContent = m === "login" ? "Entrar" : "Crear cuenta";
+      document.getElementById("err-msg").textContent = "";
+    }
+
+    document.getElementById("submit-btn").addEventListener("click", submit);
+    document.getElementById("password").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") submit();
+    });
+
+    async function submit() {
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+      const errEl = document.getElementById("err-msg");
+      errEl.textContent = "";
+
+      if (!username || !password) {
+        errEl.textContent = "Completa usuario y contraseña.";
+        return;
+      }
+
+      const url = mode === "login" ? "/login" : "/register";
+      try {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          errEl.textContent = data.error || "Error desconocido.";
+          return;
+        }
+        window.location.href = "/";
+      } catch {
+        errEl.textContent = "No se pudo conectar al servidor.";
+      }
+    }
+  </script>
+</body>
+</html>

@@ -2,6 +2,9 @@
 # usa su propio Stockfish WASM en web/js/engine/.
 engine/
 
+# Variables de entorno (contiene contraseñas, nunca subir a git).
+.env
+
 # Datos locales del modo de juego de escritorio.
 profile.json
 

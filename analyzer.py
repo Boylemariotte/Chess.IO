@@ -13,6 +13,7 @@ import io
 import os
 import json
 import math
+import shutil
 import chess
 import chess.pgn
 import chess.engine
@@ -54,11 +55,23 @@ def _detect_opening(game):
         return {"eco": found["eco"], "name": found["name"], "theory_end_ply": end_ply}
     return None
 
-# Ruta al ejecutable de Stockfish incluido en el proyecto.
-ENGINE_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "engine", "stockfish", "stockfish-windows-x86-64-avx2.exe",
-)
+# Ruta al ejecutable de Stockfish: busca en engine/stockfish/ primero,
+# luego en el sistema (Linux/Mac via PATH).
+def _find_engine() -> str:
+    local_dir = os.path.join(os.path.dirname(__file__), "engine", "stockfish")
+    if os.path.isdir(local_dir):
+        for name in sorted(os.listdir(local_dir)):
+            if name.startswith("stockfish"):
+                return os.path.join(local_dir, name)
+    system = shutil.which("stockfish")
+    if system:
+        return system
+    raise FileNotFoundError(
+        "Stockfish no encontrado. Colócalo en engine/stockfish/ "
+        "o instálalo en el sistema (apt install stockfish)."
+    )
+
+ENGINE_PATH = _find_engine()
 
 # Valor en peones de cada pieza (para explicar material colgado).
 PIECE_VALUE = {
@@ -97,6 +110,43 @@ LABEL_COLOR = {
 BAD_LABELS = {"Imprecisión", "Inexacta", "Error", "Blunder"}
 
 
+def _find_hanging(board, color):
+    """Piezas de `color` que están atacadas y completamente sin defensa."""
+    opp = not color
+    result = []
+    for sq in chess.SQUARES:
+        p = board.piece_at(sq)
+        if p and p.color == color and p.piece_type != chess.KING:
+            if board.is_attacked_by(opp, sq) and not board.is_attacked_by(color, sq):
+                result.append((sq, p))
+    return result
+
+
+def _fork_targets_after(board, move, victim_color):
+    """Piezas de `victim_color` que la pieza movida ataca tras `move` y que
+    están en riesgo (sin defensa, valen más que el atacante, o es el rey)."""
+    b = board.copy()
+    b.push(move)
+    mp = b.piece_at(move.to_square)
+    if not mp:
+        return []
+    mv = PIECE_VALUE.get(mp.piece_type, 0)
+    mover_color = not victim_color
+
+    at_risk = []
+    for sq in b.attacks(move.to_square):
+        p = b.piece_at(sq)
+        if p and p.color == victim_color:
+            if p.piece_type == chess.KING:
+                at_risk.append((sq, p))
+            else:
+                pv = PIECE_VALUE.get(p.piece_type, 0)
+                defenders = b.attackers(victim_color, sq)
+                if not defenders or pv > mv:
+                    at_risk.append((sq, p))
+    return at_risk
+
+
 def _classify(cp_loss, is_best, only_move):
     if only_move:
         return "Forzada", ""
@@ -130,11 +180,12 @@ def _accuracy_from_winpct(before, after):
     return max(0.0, min(100.0, acc))
 
 
-def _explain(board_after, best_info, after_info, best_san, is_best,
-             cp_loss, mover, label):
-    """Genera una explicación en español de por qué la jugada fue mala.
+def _explain(board_before, board_after, move, best_move, best_info, after_info,
+             best_san, is_best, cp_loss, mover, label):
+    """Genera una explicación táctica en español de por qué la jugada fue mala.
 
-    `board_after` es el tablero TRAS la jugada real (le toca al rival).
+    `board_before` es el tablero ANTES de la jugada.
+    `board_after`  es el tablero TRAS la jugada real (le toca al rival).
     """
     if label not in BAD_LABELS:
         return ""
@@ -151,8 +202,42 @@ def _explain(board_after, best_info, after_info, best_san, is_best,
     if after_pov.is_mate() and after_pov.mate() < 0:
         return f"Permites un mate en {abs(after_pov.mate())} para el rival."
 
-    # 3) Cuelgas material: el rival responde capturando una pieza.
-    if reply is not None and (board_after.is_capture(reply)):
+    # 3) Horquilla: la mejor respuesta del rival ataca dos o más piezas tuyas.
+    if reply is not None:
+        fork = _fork_targets_after(board_after, reply, mover)
+        if len(fork) >= 2:
+            reply_san = board_after.san(reply)
+            kings = [(sq, p) for sq, p in fork if p.piece_type == chess.KING]
+            others = [(sq, p) for sq, p in fork if p.piece_type != chess.KING]
+            if kings and others:
+                sq, p = max(others, key=lambda x: PIECE_VALUE.get(x[1].piece_type, 0))
+                pname = PIECE_ES.get(p.piece_type, "pieza")
+                return (f"Permites una horquilla: el rival juega {reply_san} "
+                        f"dando jaque y atacando tu {pname} en {chess.square_name(sq)}. "
+                        f"Mejor era {best_san}.")
+            if len(others) >= 2:
+                names = " y ".join(
+                    f"{PIECE_ES.get(p.piece_type, 'pieza')} ({chess.square_name(sq)})"
+                    for sq, p in others[:2]
+                )
+                return (f"El rival juega {reply_san} atacando tu {names} a la vez "
+                        f"(horquilla). Mejor era {best_san}.")
+
+    # 4) Dejaste una pieza sin protección (expuesta por tu movimiento).
+    hanging_before = {sq for sq, _ in _find_hanging(board_before, mover)}
+    newly_hanging = [
+        (sq, p) for sq, p in _find_hanging(board_after, mover)
+        if sq not in hanging_before
+    ]
+    if newly_hanging:
+        sq, piece = max(newly_hanging, key=lambda x: PIECE_VALUE.get(x[1].piece_type, 0))
+        pname = PIECE_ES.get(piece.piece_type, "pieza")
+        sqname = chess.square_name(sq)
+        return (f"Dejas tu {pname} en {sqname} completamente sin defensa. "
+                f"Mejor era {best_san}.")
+
+    # 5) El rival captura directamente una pieza tuya en su respuesta.
+    if reply is not None and board_after.is_capture(reply):
         captured = board_after.piece_at(reply.to_square)
         if captured is None and board_after.is_en_passant(reply):
             cap_name, cap_val = "peón", 1
@@ -164,12 +249,24 @@ def _explain(board_after, best_info, after_info, best_san, is_best,
         if cap_name and cap_val >= 1:
             reply_san = board_after.san(reply)
             sq = chess.square_name(reply.to_square)
-            return (f"Cuelgas tu {cap_name} en {sq}: el rival juega "
+            return (f"Tu {cap_name} en {sq} queda colgado: el rival juega "
                     f"{reply_san} y gana material. Mejor era {best_san}.")
 
-    # 4) Genérico: perdiste ventaja, había algo mejor.
+    # 6) Tenías material rival colgado y no lo tomaste.
+    if not board_before.is_capture(move):
+        opp_hanging = _find_hanging(board_before, not mover)
+        if opp_hanging:
+            sq, piece = max(opp_hanging, key=lambda x: PIECE_VALUE.get(x[1].piece_type, 0))
+            pv = PIECE_VALUE.get(piece.piece_type, 0)
+            if pv >= 1:
+                pname = PIECE_ES.get(piece.piece_type, "pieza")
+                sqname = chess.square_name(sq)
+                return (f"La {pname} rival en {sqname} estaba colgada y no la tomaste. "
+                        f"Lo correcto era {best_san}.")
+
+    # 7) Genérico: perdiste ventaja significativa.
     perdido = cp_loss / 100
-    return (f"Pierdes {perdido:.2f} de ventaja. La jugada precisa era {best_san}.")
+    return f"Pierdes {perdido:.2f} peones de ventaja. La jugada precisa era {best_san}."
 
 
 def _rating_label(accuracy):
@@ -215,6 +312,7 @@ def _analyze_game(game, engine, depth, progress=None, offset=0, grand_total=0):
         only_move = board.legal_moves.count() == 1
         played_san = board.san(move)
 
+        board_before = board.copy()
         board.push(move)
         after_info = engine.analyse(board, chess.engine.Limit(depth=depth))
         after_info = after_info[0] if isinstance(after_info, list) else after_info
@@ -239,7 +337,8 @@ def _analyze_game(game, engine, depth, progress=None, offset=0, grand_total=0):
         acc_n[mover] += 1
         counts[mover][label] = counts[mover].get(label, 0) + 1
 
-        explanation = _explain(board, best_info, after_info, best_san,
+        explanation = _explain(board_before, board, move, best_move,
+                               best_info, after_info, best_san,
                                is_best, cp_loss, mover, label)
 
         eval_white = cp_after if mover == chess.WHITE else -cp_after

@@ -757,6 +757,92 @@ function moveShortText(m) {
   return `${info.name} ${from} ${verb} ${to} (${m.san})`;
 }
 
+// ---------- Auth / usuario ----------
+
+async function initUser() {
+  const resp = await fetch("/me");
+  const data = await resp.json();
+  if (!data.authenticated) { window.location.href = "/login"; return; }
+  document.getElementById("user-greeting").innerHTML =
+    `Hola, <strong>${data.username}</strong>`;
+}
+
+document.getElementById("logout-btn").addEventListener("click", async () => {
+  await fetch("/logout", { method: "POST" });
+  window.location.href = "/login";
+});
+
+initUser();
+
+// ---------- Pestaña Mis partidas ----------
+
+async function loadSavedList() {
+  const resp = await fetch("/games");
+  if (resp.status === 401) { window.location.href = "/login"; return; }
+  const games = await resp.json();
+  const el = document.getElementById("saved-list");
+  if (!games.length) {
+    el.innerHTML = '<em style="color:var(--muted)">Aún no tienes partidas guardadas. Analiza una y aparecerá aquí.</em>';
+    return;
+  }
+  el.innerHTML = games.map(g => {
+    const d = new Date(g.analyzed_at);
+    const fecha = d.toLocaleDateString("es", { day:"2-digit", month:"short", year:"numeric" });
+    return `<div class="saved-item" data-id="${g.id}">
+      <div class="saved-label">${escHtml(g.label)}</div>
+      <div class="saved-date">${fecha}</div>
+      <button class="ghost" onclick="openSavedGame(${g.id})">Ver análisis</button>
+      <button class="ghost" style="color:#e74c3c" onclick="deleteSavedGame(${g.id}, this)">✕</button>
+    </div>`;
+  }).join("");
+}
+
+function escHtml(str) {
+  return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+async function openSavedGame(id) {
+  const resp = await fetch(`/games/${id}`);
+  if (!resp.ok) { alert("No se pudo cargar la partida."); return; }
+  const data = await resp.json();
+  // Cargar en el analizador y cambiar a esa pestaña
+  document.querySelector('[data-tab="analyze"]').click();
+  document.getElementById("pgn").value = data.pgn_text;
+  onResult(data.analysis);
+  document.getElementById("results").scrollIntoView({ behavior: "smooth" });
+}
+
+async function deleteSavedGame(id, btn) {
+  if (!confirm("¿Eliminar esta partida guardada?")) return;
+  const resp = await fetch(`/games/${id}`, { method: "DELETE" });
+  if (resp.ok) { btn.closest(".saved-item").remove(); }
+}
+
+// ---------- Auto-guardar después del análisis ----------
+
+async function saveAnalyzedGames(pgn, result) {
+  for (const game of result.games) {
+    try {
+      await fetch("/games/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: game.label,
+          pgn_text: pgn,
+          analysis: result,
+        }),
+      });
+    } catch { /* silencioso */ }
+  }
+  showToast();
+}
+
+function showToast() {
+  const t = document.getElementById("save-toast");
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 3000);
+}
+
 // ---------- Análisis ----------
 
 async function analyze() {
@@ -798,6 +884,7 @@ async function analyze() {
           throw new Error(msg.message);
         } else if (msg.type === "result") {
           onResult(msg);
+          saveAnalyzedGames(pgn, msg);
         }
       }
     }
@@ -812,7 +899,7 @@ async function analyze() {
 
 function onResult(result) {
   allGames = result.games;
-  players = result.players;
+  players = result.players || {};
   buildGlobalStats();
   buildGamesList();
   document.getElementById("results").classList.remove("hidden");
@@ -888,6 +975,18 @@ document.getElementById("pz-solution").addEventListener("click", puzzleSolution)
 document.getElementById("pz-next").addEventListener("click", puzzleNext);
 
 // Copiar / descargar el reporte.
+// Tabs (incluyendo la nueva pestaña "Mis partidas")
+document.querySelectorAll(".tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(c => c.classList.add("hidden"));
+    btn.classList.add("active");
+    document.getElementById("tab-" + tab).classList.remove("hidden");
+    if (tab === "saved") loadSavedList();
+  });
+});
+
 document.getElementById("copy-report").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(lastReportText);

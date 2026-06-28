@@ -1,2 +1,6 @@
 chess>=1.11
 flask>=3.0
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+gunicorn>=21.0
+python-dotenv>=1.0
