@@ -763,8 +763,15 @@ async function initUser() {
   const resp = await fetch("/me");
   const data = await resp.json();
   if (!data.authenticated) { window.location.href = "/login"; return; }
-  document.getElementById("user-greeting").innerHTML =
-    `Hola, <strong>${data.username}</strong>`;
+  const initial = data.username[0].toUpperCase();
+  document.getElementById("user-avatar").textContent = initial;
+  document.getElementById("username-display").textContent = data.username;
+  document.getElementById("home-username").textContent = data.username;
+  const mAvatar = document.getElementById("mobile-avatar");
+  const mUser  = document.getElementById("mobile-username");
+  if (mAvatar) mAvatar.textContent = initial;
+  if (mUser)   mUser.textContent   = data.username;
+  loadHomeElo();
 }
 
 document.getElementById("logout-btn").addEventListener("click", async () => {
@@ -773,6 +780,48 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
 });
 
 initUser();
+
+// ---------- Navegación ----------
+
+function navigateTo(page) {
+  document.querySelectorAll(".page").forEach(p => p.classList.add("hidden"));
+  document.querySelectorAll(".snav-btn, .mnav-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.page === page);
+  });
+  const target = document.getElementById("page-" + page);
+  if (target) target.classList.remove("hidden");
+  if (page === "saved") loadSavedList();
+  window.scrollTo(0, 0);
+}
+
+document.querySelectorAll(".snav-btn, .mnav-btn").forEach(btn => {
+  btn.addEventListener("click", () => navigateTo(btn.dataset.page));
+});
+
+// ---------- Home — widget de Elo ----------
+
+async function loadHomeElo() {
+  try {
+    const resp = await fetch("/play/profile");
+    if (!resp.ok) return;
+    const p = await resp.json();
+    if (!p.games) return;
+    const card = document.getElementById("home-elo-card");
+    const delta = p.delta > 0 ? `<span class="home-elo-delta" style="color:#2ecc71">+${p.delta}</span>`
+                : p.delta < 0 ? `<span class="home-elo-delta" style="color:#e74c3c">${p.delta}</span>` : "";
+    card.innerHTML = `
+      <div>
+        <div class="home-elo-num">${p.elo} <span style="font-size:1rem;font-weight:400;color:var(--muted)">Elo</span>${delta}</div>
+        <div class="home-elo-rank">${p.rank}</div>
+        <div class="home-elo-meta">${p.games} partida${p.games !== 1 ? "s" : ""} jugada${p.games !== 1 ? "s" : ""}</div>
+      </div>
+      <div class="home-elo-divider"></div>
+      <div class="home-elo-stat"><div class="val" style="color:#2ecc71">${p.wins}</div><div class="lbl">Victorias</div></div>
+      <div class="home-elo-stat"><div class="val" style="color:var(--muted)">${p.draws}</div><div class="lbl">Empates</div></div>
+      <div class="home-elo-stat"><div class="val" style="color:#e74c3c">${p.losses}</div><div class="lbl">Derrotas</div></div>`;
+    card.classList.remove("hidden");
+  } catch { /* silencioso */ }
+}
 
 // ---------- Pestaña Mis partidas ----------
 
@@ -805,8 +854,7 @@ async function openSavedGame(id) {
   const resp = await fetch(`/games/${id}`);
   if (!resp.ok) { alert("No se pudo cargar la partida."); return; }
   const data = await resp.json();
-  // Cargar en el analizador y cambiar a esa pestaña
-  document.querySelector('[data-tab="analyze"]').click();
+  navigateTo("analyze");
   document.getElementById("pgn").value = data.pgn_text;
   onResult(data.analysis);
   document.getElementById("results").scrollIntoView({ behavior: "smooth" });
@@ -975,17 +1023,6 @@ document.getElementById("pz-solution").addEventListener("click", puzzleSolution)
 document.getElementById("pz-next").addEventListener("click", puzzleNext);
 
 // Copiar / descargar el reporte.
-// Tabs (incluyendo la nueva pestaña "Mis partidas")
-document.querySelectorAll(".tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const tab = btn.dataset.tab;
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-    document.querySelectorAll(".tab-content").forEach(c => c.classList.add("hidden"));
-    btn.classList.add("active");
-    document.getElementById("tab-" + tab).classList.remove("hidden");
-    if (tab === "saved") loadSavedList();
-  });
-});
 
 document.getElementById("copy-report").addEventListener("click", async () => {
   try {

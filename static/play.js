@@ -43,17 +43,11 @@ function soundBlunder() { beep(140, 0.22, "sawtooth", 0.06); }
 function soundWin() { beep(523, 0.12); setTimeout(() => beep(659, 0.12), 120); setTimeout(() => beep(784, 0.18), 250); }
 function soundLose() { beep(300, 0.18, "sine"); setTimeout(() => beep(180, 0.28, "sine"), 160); }
 
-// ---------- Pestañas ----------
+// ---------- Navegación (delega a navigateTo de app.js) ----------
 
 function switchTab(name) {
-  document.querySelectorAll(".tab-btn").forEach((b) =>
-    b.classList.toggle("active", b.dataset.tab === name));
-  document.getElementById("tab-analyze").classList.toggle("hidden", name !== "analyze");
-  document.getElementById("tab-play").classList.toggle("hidden", name !== "play");
+  if (typeof navigateTo === "function") navigateTo(name);
 }
-
-document.querySelectorAll(".tab-btn").forEach((b) =>
-  b.addEventListener("click", () => switchTab(b.dataset.tab)));
 
 // ---------- Tablero ----------
 
@@ -229,14 +223,27 @@ function flashBlunder() {
 }
 
 function showFeedback(ym, em) {
-  let html = `<span class="badge" style="background:${ym.color_hex}">${ym.label} ${ym.symbol}</span> ` +
-    `<strong>${pieceInfo(ym.san).glyph} ${moveDescription(ym)}</strong>`;
-  if (!ym.is_best) {
-    html += `<div class="best">Lo mejor era: <strong>${moveDescription({ san: ym.best_san, uci: ym.best_uci })}</strong></div>`;
-  } else {
-    html += `<div class="best">¡La mejor jugada! ✓</div>`;
+  // Entrenador eval (cp_loss)
+  const evalEl = document.getElementById("entrenador-eval");
+  if (evalEl) {
+    if (ym.cp_loss > 0) {
+      const pawn = (ym.cp_loss / 100).toFixed(2);
+      evalEl.textContent = `-${pawn}`;
+      evalEl.style.color = ym.cp_loss > 100 ? "#e74c3c" : ym.cp_loss > 50 ? "#e67e22" : "#8b949e";
+    } else {
+      evalEl.textContent = "+0.00";
+      evalEl.style.color = "#1bbd7e";
+    }
   }
-  if (em) html += `<div class="reply">↩ El rival jugó: <strong>${pieceInfo(em.san).glyph} ${moveDescription(em)}</strong></div>`;
+
+  let html = `<div style="margin-bottom:8px"><span class="badge" style="background:${ym.color_hex}">${ym.label} ${ym.symbol}</span> ` +
+    `<strong style="margin-left:6px">${pieceInfo(ym.san).glyph} ${moveDescription(ym)}</strong></div>`;
+  if (!ym.is_best) {
+    html += `<div class="entrenador-suggestion"><span><span class="sug-label">Sugerido</span><span class="sug-move">${ym.best_san}</span></span></div>`;
+  } else {
+    html += `<div style="color:#1bbd7e;font-size:.88rem;font-weight:600">La mejor jugada ✓</div>`;
+  }
+  if (em) html += `<div class="best" style="margin-top:8px">El rival jugó: <strong>${pieceInfo(em.san).glyph} ${moveDescription(em)}</strong></div>`;
   document.getElementById("play-feedback").innerHTML = html;
 }
 
@@ -294,6 +301,7 @@ function renderEloPanel(profile, afterGame) {
     ${extra}`;
   document.getElementById("elo-card").classList.remove("hidden");
   renderEloGraph(profile.elo_history);
+  renderStatsCards(profile);
 }
 
 // Gráfico de evolución del Elo.
@@ -383,7 +391,13 @@ async function startGame() {
     document.getElementById("play-feedback").innerHTML = "<em>Haz tu jugada para ver la evaluación.</em>";
     document.getElementById("play-analyze").classList.add("hidden");
     document.getElementById("promo-overlay").classList.add("hidden");
+    const setupWrap = document.getElementById("play-setup-wrap");
+    if (setupWrap) setupWrap.classList.add("hidden");
     document.getElementById("play-area").classList.remove("hidden");
+    const chip = document.getElementById("play-status-chip-text");
+    if (chip) chip.textContent = `Partida en curso · IA ${data.engine_rank}`;
+    const evalEl = document.getElementById("entrenador-eval");
+    if (evalEl) { evalEl.textContent = ""; }
     renderPlayTags(data);
     renderEloPanel(data.profile, false);
     renderPlayBoard();
@@ -435,16 +449,85 @@ function setPlayStatus(text, cls) {
   el.className = cls || "";
 }
 
+// Renderiza las stats cards del setup.
+function renderStatsCards(profile) {
+  if (!profile || !profile.games) return;
+  const row = document.getElementById("play-stats-row");
+  if (row) row.classList.remove("hidden");
+
+  const eloEl = document.getElementById("psc-elo-val");
+  if (eloEl) eloEl.textContent = profile.elo;
+  const rankEl = document.getElementById("psc-elo-rank");
+  if (rankEl) rankEl.textContent = profile.rank;
+
+  const precEl = document.getElementById("psc-prec-val");
+  const precSub = document.getElementById("psc-prec-sub");
+  if (precEl) {
+    if (profile.last_acpl !== null && profile.last_acpl !== undefined) {
+      precEl.textContent = profile.last_acpl + " cp";
+      if (precSub) precSub.textContent = "centipeones por jugada";
+    } else {
+      precEl.textContent = "—";
+    }
+  }
+
+  const balEl = document.getElementById("psc-bal-val");
+  const barEl = document.getElementById("psc-bar");
+  const labEl = document.getElementById("psc-bal-labels");
+  if (balEl) balEl.textContent = profile.games + " partida" + (profile.games !== 1 ? "s" : "");
+  if (barEl) {
+    barEl.innerHTML = `
+      <div class="bb-w" style="flex:${profile.wins || 0}"></div>
+      <div class="bb-d" style="flex:${profile.draws || 0}"></div>
+      <div class="bb-l" style="flex:${profile.losses || 0}"></div>`;
+  }
+  if (labEl) {
+    labEl.innerHTML = `
+      <span class="bw">${profile.wins}V</span>
+      <span class="bd">${profile.draws}E</span>
+      <span class="bl">${profile.losses}D</span>`;
+  }
+}
+
 // Cargar el Elo guardado al abrir.
 async function loadProfileOnStart() {
   try {
     const r = await fetch("/play/profile");
     const p = await r.json();
-    if (!p.error) renderEloPanel(p, false);
-  } catch (e) { /* sin perfil aún */ }
+    if (!p.error) { renderEloPanel(p, false); renderStatsCards(p); }
+  } catch (e) { /* sin perfil aun */ }
 }
 
 // ---------- Eventos ----------
+
+// Button groups para color
+document.querySelectorAll("#color-group .bgroup-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#color-group .bgroup-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("play-color").value = btn.dataset.val;
+  });
+});
+
+// Button groups para dificultad
+document.querySelectorAll("#diff-group .bgroup-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#diff-group .bgroup-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("play-mode").value = btn.dataset.mode;
+    document.getElementById("play-elo").value = btn.dataset.elo;
+  });
+});
+
+// Volver al setup
+const playBackBtn = document.getElementById("play-back");
+if (playBackBtn) {
+  playBackBtn.addEventListener("click", () => {
+    document.getElementById("play-area").classList.add("hidden");
+    const setupWrap = document.getElementById("play-setup-wrap");
+    if (setupWrap) setupWrap.classList.remove("hidden");
+  });
+}
 
 document.getElementById("play-mode").addEventListener("change", (e) => {
   document.getElementById("elo-fixed-wrap").classList.toggle("hidden", e.target.value !== "fixed");

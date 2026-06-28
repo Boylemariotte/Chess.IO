@@ -2,7 +2,7 @@ services:
   - type: web
     name: chess-io
     runtime: python
-    buildCommand: pip install -r requirements.txt && apt-get install -y stockfish
+    buildCommand: pip install -r requirements.txt && mkdir -p engine/stockfish && curl -sL https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-ubuntu-x86-64-avx2.tar -o /tmp/sf.tar && tar -xf /tmp/sf.tar -C /tmp && mv /tmp/stockfish/stockfish-ubuntu-x86-64-avx2 engine/stockfish/stockfish && chmod +x engine/stockfish/stockfish
     startCommand: gunicorn app:app -w 1 --threads 4 --timeout 120
     envVars:
       - key: SECRET_KEY
