@@ -14,6 +14,7 @@ import os
 import json
 import math
 import shutil
+import threading
 import chess
 import chess.pgn
 import chess.engine
@@ -403,17 +404,47 @@ def _open_engine():
     return engine
 
 
+# Motor persistente: se inicia una vez y se reutiliza entre requests.
+_engine: chess.engine.SimpleEngine | None = None
+_engine_lock = threading.Lock()
+
+
+def _get_engine() -> chess.engine.SimpleEngine:
+    global _engine
+    if _engine is not None:
+        try:
+            _engine.ping()
+            return _engine
+        except Exception:
+            try:
+                _engine.quit()
+            except Exception:
+                pass
+            _engine = None
+    _engine = _open_engine()
+    return _engine
+
+
+def warm_engine() -> None:
+    """Pre-inicializa Stockfish al arrancar la app para que el primer análisis sea inmediato."""
+    with _engine_lock:
+        _get_engine()
+
+
 def analyze_pgn(pgn_text, depth=15, progress=None):
     """Analiza la PRIMERA partida del texto (compatibilidad)."""
     game = chess.pgn.read_game(io.StringIO(pgn_text))
     if game is None:
         raise ValueError("No se pudo leer ninguna partida del texto PGN.")
     total = len(list(game.mainline_moves()))
-    engine = _open_engine()
-    try:
-        return _analyze_game(game, engine, depth, progress, 0, total)
-    finally:
-        engine.quit()
+    with _engine_lock:
+        engine = _get_engine()
+        try:
+            return _analyze_game(game, engine, depth, progress, 0, total)
+        except Exception:
+            global _engine
+            _engine = None
+            raise
 
 
 def analyze_games(pgn_text, depth=15, progress=None):
@@ -431,18 +462,21 @@ def analyze_games(pgn_text, depth=15, progress=None):
 
     grand_total = sum(len(list(g.mainline_moves())) for g in parsed)
 
-    engine = _open_engine()
-    games = []
-    offset = 0
-    try:
-        for g in parsed:
-            n = len(list(g.mainline_moves()))
-            game_result = _analyze_game(g, engine, depth, progress,
-                                        offset, grand_total)
-            games.append(game_result)
-            offset += n
-    finally:
-        engine.quit()
+    with _engine_lock:
+        engine = _get_engine()
+        games = []
+        offset = 0
+        try:
+            for g in parsed:
+                n = len(list(g.mainline_moves()))
+                game_result = _analyze_game(g, engine, depth, progress,
+                                            offset, grand_total)
+                games.append(game_result)
+                offset += n
+        except Exception:
+            global _engine
+            _engine = None
+            raise
 
     return {
         "games": games,

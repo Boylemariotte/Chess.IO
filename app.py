@@ -23,6 +23,9 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
 
 init_db()
 
+# Pre-calienta Stockfish en background para que el primer análisis sea inmediato.
+threading.Thread(target=analyzer.warm_engine, daemon=True).start()
+
 
 # ---------- Autenticación ----------
 

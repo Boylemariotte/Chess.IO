@@ -111,6 +111,49 @@ function renderPlayBoard() {
   drawHintArrow();
 }
 
+// ---------- Animación de movimiento ----------
+
+function squareToPercent(name) {
+  const f = "abcdefgh".indexOf(name[0]);
+  const r = 8 - parseInt(name[1], 10);
+  const df = P.flipped ? 7 - f : f;
+  const dr = P.flipped ? 7 - r : r;
+  return { left: df * 12.5, top: dr * 12.5 };
+}
+
+function animatePiece(fromSq, toSq, glyph, colorClass, callback) {
+  const animator = document.getElementById("piece-animator");
+  if (!animator) { callback(); return; }
+
+  const fromPos = squareToPercent(fromSq);
+  const toPos   = squareToPercent(toSq);
+
+  // Oculta la pieza original en la casilla de origen
+  const fromEl = document.querySelector(`#play-board [data-square="${fromSq}"]`);
+  if (fromEl) fromEl.classList.add("piece-animating");
+
+  // Configura el elemento volador sin transición (posición inicial instantánea)
+  animator.className = colorClass;
+  animator.textContent = glyph;
+  animator.style.transition = "none";
+  animator.style.left = fromPos.left + "%";
+  animator.style.top  = fromPos.top  + "%";
+  animator.style.display = "flex";
+
+  void animator.offsetWidth; // fuerza reflow para que la transición arranque
+
+  // Activa la transición y mueve a destino
+  animator.style.transition = "left 0.2s cubic-bezier(.4,0,.2,1), top 0.2s cubic-bezier(.4,0,.2,1)";
+  animator.style.left = toPos.left + "%";
+  animator.style.top  = toPos.top  + "%";
+
+  setTimeout(() => {
+    animator.style.display = "none";
+    if (fromEl) fromEl.classList.remove("piece-animating");
+    callback();
+  }, 220);
+}
+
 function drawHintArrow() {
   const svgEl = document.getElementById("play-arrows");
   svgEl.innerHTML = "";
@@ -145,7 +188,18 @@ function onSquareClick(name) {
       const from = P.selected;
       P.selected = null;
       if (needsPromotion(from, name)) { showPromotion(from, name); renderPlayBoard(); return; }
-      doMove(from, name, null);
+      const piece = pieceAt(from);
+      if (piece) {
+        // Bloquea clics, actualiza estado visual y lanza animación antes del envío al servidor
+        P.busy = true;
+        setPlayStatus("Pensando…", "thinking");
+        renderPlayBoard(); // limpia selección y puntos de destino
+        animatePiece(from, name, GLYPH[piece.type],
+          piece.color === "w" ? "piece-w" : "piece-b",
+          () => doMove(from, name, null));
+      } else {
+        doMove(from, name, null);
+      }
       return;
     }
   }
@@ -180,7 +234,6 @@ function showPromotion(from, to) {
 
 async function doMove(from, to, promo) {
   P.busy = true;
-  setPlayStatus("Pensando…", "thinking");
   try {
     const data = await postJSON("/play/move", { from, to, promotion: promo });
     if (data.error) { setPlayStatus("⚠ " + data.error, "error"); P.busy = false; renderPlayBoard(); return; }
@@ -192,28 +245,57 @@ async function doMove(from, to, promo) {
 }
 
 function handleMoveResponse(data) {
-  P.fen = data.fen;
-  P.legal = data.legal || {};
-  // Resaltar la última jugada del tablero (la del rival si existe, si no la tuya).
-  P.lastMove = data.engine_move ? data.engine_move.uci : data.your_move.uci;
+  const ym = data.your_move;
+  const em = data.engine_move;
+
   P.moveNo += 1;
-  showFeedback(data.your_move, data.engine_move);
-  appendHistory(data.your_move, data.engine_move);
-  renderPlayBoard();
+  showFeedback(ym, em);
+  appendHistory(ym, em);
   document.getElementById("play-analyze").classList.remove("hidden");
 
-  // Sonidos y aviso de blunder.
-  const ym = data.your_move, em = data.engine_move;
-  if (ym.label === "Blunder") { soundBlunder(); flashBlunder(); }
+  // Sonidos
+  if (ym.label === "Blunder") soundBlunder();
   else if ((em && em.san.includes("x")) || ym.san.includes("x")) soundCapture();
   else soundMove();
   if (data.in_check) soundCheck();
 
-  if (data.status !== "playing") {
-    endGame(data.status, data.profile);
-  } else {
-    setPlayStatus(data.in_check ? "¡Jaque! Te toca." : "Te toca mover.", data.in_check ? "check" : "");
+  // Aplicar estado final y renderizar
+  const finish = () => {
+    P.fen = data.fen;
+    P.legal = data.legal || {};
+    P.lastMove = em ? em.uci : ym.uci;
+    renderPlayBoard();
+    if (ym.label === "Blunder") flashBlunder();
+    if (data.status !== "playing") {
+      endGame(data.status, data.profile);
+    } else {
+      setPlayStatus(data.in_check ? "¡Jaque! Te toca." : "Te toca mover.", data.in_check ? "check" : "");
+    }
+  };
+
+  // Animar el movimiento del motor si tenemos el FEN intermedio
+  if (em && data.intermediate_fen) {
+    const fromSq = em.uci.slice(0, 2);
+    const toSq   = em.uci.slice(2, 4);
+    const tmpBoard = parseFen(data.intermediate_fen);
+    const ff = "abcdefgh".indexOf(fromSq[0]);
+    const fr = 8 - parseInt(fromSq[1], 10);
+    const piece = tmpBoard[fr][ff];
+
+    if (piece) {
+      // Renderizar estado tras el movimiento del jugador (antes del motor)
+      P.fen = data.intermediate_fen;
+      P.legal = {};
+      P.lastMove = ym.uci;
+      renderPlayBoard();
+      animatePiece(fromSq, toSq, GLYPH[piece.type],
+        piece.color === "w" ? "piece-w" : "piece-b",
+        finish);
+      return;
+    }
   }
+
+  finish();
 }
 
 function flashBlunder() {

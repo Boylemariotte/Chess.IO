@@ -255,6 +255,7 @@ def user_move(user_id: int, frm: str, to: str, promo: str | None = None) -> dict
         eval_white = cp_after if mover == chess.WHITE else -cp_after
 
         status = _status(board)
+        intermediate_fen = board.fen()
         engine_move = None
         if status == "playing":
             engine_move = _engine_reply(game)
@@ -269,6 +270,7 @@ def user_move(user_id: int, frm: str, to: str, promo: str | None = None) -> dict
             "engine_move": engine_move, "legal": _legal_map(board),
             "status": status, "eval_white": eval_white,
             "in_check": board.is_check(), "profile": profile,
+            "intermediate_fen": intermediate_fen,
         }
 
 

@@ -158,7 +158,16 @@ body {
   margin-left: var(--sidebar-w);
   min-height: 100vh;
   padding: 28px 28px 40px;
-  max-width: 1200px;
+}
+
+/* Centra el área de juego dentro del espacio disponible */
+#page-play #play-area {
+  max-width: 1060px;
+  margin: 0 auto;
+}
+#page-play #play-setup-wrap {
+  max-width: 760px;
+  margin: 0 auto;
 }
 
 .page { animation: fade .2s; }
@@ -314,10 +323,16 @@ button:disabled { opacity: .4; cursor: default; }
    TABLERO
    ============================================= */
 
-#board-wrap, #play-board-wrap {
+#board-wrap {
   position: relative;
   width: 100%;
   max-width: 440px;
+  aspect-ratio: 1 / 1;
+}
+#play-board-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 580px;
   aspect-ratio: 1 / 1;
 }
 #board, #play-board {
@@ -344,6 +359,7 @@ button:disabled { opacity: .4; cursor: default; }
   position: relative;
   user-select: none;
 }
+#play-board .sq { font-size: clamp(24px, 6.5vw, 54px); }
 .sq.light { background: var(--light-sq); }
 .sq.dark  { background: var(--dark-sq); }
 .sq .piece-w { color: #fff; text-shadow: 0 0 2px #000, 0 1px 2px rgba(0,0,0,.6); }
@@ -363,6 +379,7 @@ button:disabled { opacity: .4; cursor: default; }
 
 .player-tag { width: 100%; max-width: 440px; padding: 6px 4px; font-weight: 600; font-size: .9rem; }
 .player-tag.bottom { margin-top: 6px; }
+#ptag-top, #ptag-bottom { max-width: 580px; }
 
 /* =============================================
    INFO DE JUGADA
@@ -521,11 +538,41 @@ button:disabled { opacity: .4; cursor: default; }
    MODO DE JUEGO
    ============================================= */
 
-.play-layout { display: grid; grid-template-columns: minmax(0, 460px) 1fr; gap: 18px; }
-@media (max-width: 860px) { .play-layout { grid-template-columns: 1fr; } }
+.play-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 600px) 1fr;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 920px) { .play-layout { grid-template-columns: 1fr; } }
 
 #play-board .sq { cursor: pointer; }
-#play-board .sq.selected { box-shadow: inset 0 0 0 4px rgba(241,196,15,.85); }
+
+@keyframes sq-select-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 3px rgba(241,196,15,.7); }
+  50% { box-shadow: inset 0 0 0 5px rgba(241,196,15,1), 0 0 12px rgba(241,196,15,.4); }
+}
+#play-board .sq.selected { animation: sq-select-pulse 0.75s ease-in-out infinite; }
+
+/* Pieza volando durante la animación de movimiento */
+#piece-animator {
+  position: absolute;
+  width: 12.5%;
+  height: 12.5%;
+  pointer-events: none;
+  z-index: 10;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(24px, 6.5vw, 54px);
+  line-height: 1;
+  user-select: none;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,.45));
+}
+
+/* Oculta la pieza original en la casilla de origen durante la animación */
+#play-board .sq.piece-animating .piece-w,
+#play-board .sq.piece-animating .piece-b { opacity: 0; }
 
 .legal-dot {
   position: absolute; width: 30%; height: 30%; border-radius: 50%;
@@ -537,7 +584,7 @@ button:disabled { opacity: .4; cursor: default; }
 }
 
 #play-status {
-  width: 100%; max-width: 440px; margin-top: 12px; padding: 10px 14px;
+  width: 100%; max-width: 580px; margin-top: 12px; padding: 10px 14px;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 8px; font-weight: 600; min-height: 20px; font-size: .9rem;
 }
