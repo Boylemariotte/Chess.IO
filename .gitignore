@@ -14,3 +14,7 @@ __pycache__/
 *.pyc
 .vercel/
 node_modules/
+
+# Base de datos local (cada entorno tiene la suya).
+*.db
+*.sqlite
