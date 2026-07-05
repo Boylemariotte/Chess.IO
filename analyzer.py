@@ -405,11 +405,11 @@ def _open_engine():
 
 
 # Motor persistente: se inicia una vez y se reutiliza entre requests.
-_engine: chess.engine.SimpleEngine | None = None
+_engine = None          # chess.engine.SimpleEngine | None
 _engine_lock = threading.Lock()
 
 
-def _get_engine() -> chess.engine.SimpleEngine:
+def _get_engine():
     global _engine
     if _engine is not None:
         try:
@@ -425,10 +425,18 @@ def _get_engine() -> chess.engine.SimpleEngine:
     return _engine
 
 
-def warm_engine() -> None:
+def warm_engine():
     """Pre-inicializa Stockfish al arrancar la app para que el primer análisis sea inmediato."""
-    with _engine_lock:
-        _get_engine()
+    try:
+        with _engine_lock:
+            _get_engine()
+    except Exception:
+        pass  # Fallo silencioso — el motor arrancará on-demand en el primer análisis
+
+
+def _reset_engine():
+    global _engine
+    _engine = None
 
 
 def analyze_pgn(pgn_text, depth=15, progress=None):
@@ -442,8 +450,7 @@ def analyze_pgn(pgn_text, depth=15, progress=None):
         try:
             return _analyze_game(game, engine, depth, progress, 0, total)
         except Exception:
-            global _engine
-            _engine = None
+            _reset_engine()
             raise
 
 
@@ -474,8 +481,7 @@ def analyze_games(pgn_text, depth=15, progress=None):
                 games.append(game_result)
                 offset += n
         except Exception:
-            global _engine
-            _engine = None
+            _reset_engine()
             raise
 
     return {
